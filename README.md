@@ -31,3 +31,5 @@ UMAPxspread.py = UMAP analysis in 3D with configurable spread options.
 Anova.py = Anova tests for all the features in the Macs dataset.
 
 (new) ESF.py = Elasticnet Feature selection and dataset merger. 
+
+BEAST = I dont even know if this will work, but if it does... holy.
