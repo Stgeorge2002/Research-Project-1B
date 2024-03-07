@@ -1,0 +1,80 @@
+import subprocess
+import sys
+import csv
+
+# Function to install required packages
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+# List of required packages
+required_packages = ["scikit-learn", "shap", "lime", "numpy", "pandas"]
+
+# Install missing packages
+for package in required_packages:
+    try:
+        __import__(package)
+    except ImportError:
+        install(package)
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+import shap
+from lime import lime_tabular
+
+# Path to your dataset
+dataset_path = '/content/drive/MyDrive/uniwork/Mnone.csv'  # Change this to the path of your dataset
+
+# Column name of the labels or outcomes in your dataset
+label_column = 'Treatment (1 d)'
+
+# Load your dataset
+df = pd.read_csv(dataset_path)
+
+# Drop the first 9 categorical columns
+X = df.drop(df.columns[0:9].tolist() + [label_column], axis=1).values
+y = df[label_column].values
+
+# Scale the features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Split the dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.3, random_state=42)
+
+# Train a RandomForest model
+model = RandomForestClassifier(random_state=42)
+model.fit(X_train, y_train)
+
+# Apply SHAP
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(X_test)
+
+# Convert SHAP values for all features into a DataFrame
+shap_df = pd.DataFrame(shap_values[1], columns=df.drop(columns=df.columns[:9].tolist() + [label_column]).columns)
+# Save the SHAP values to a CSV file
+shap_df.to_csv('/content/drive/MyDrive/uniwork/shap_results.csv', index=False)
+
+# Summary plot
+shap.summary_plot(shap_values, X_test, feature_names=df.drop(columns=df.columns[:9].tolist() + [label_column]).columns)
+
+# Apply LIME
+explainer = lime_tabular.LimeTabularExplainer(X_train, 
+                                               feature_names=df.drop(columns=df.columns[:9].tolist() + [label_column]).columns.tolist(),
+                                               class_names=['M0', 'M1', 'M2'],  # Updated based on your classes
+                                               discretize_continuous=True)
+
+# Explain a specific instance (change this index for other instances)
+i = np.random.randint(0, X_test.shape[0])
+exp = explainer.explain_instance(X_test[i], model.predict_proba, num_features=len(X_test[0]))
+
+# Extract feature names and their corresponding weights from the LIME explanation
+lime_dict = dict(exp.as_list())
+lime_df = pd.DataFrame(list(lime_dict.items()), columns=['Feature', 'Weight'])
+# Save the LIME explanation to a CSV file
+lime_df.to_csv('/content/drive/MyDrive/uniwork/lime_results.csv', index=False)
+
+# If you are using a Jupyter notebook environment
+exp.show_in_notebook()
