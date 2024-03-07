@@ -33,3 +33,5 @@ Anova.py = Anova tests for all the features in the Macs dataset.
 (new) ESF.py = Elasticnet Feature selection and dataset merger. 
 
 BEAST = I dont even know if this will work, but if it does... holy.
+
+lime and sharp.py = random forest tree with sharp for global and lime for local analysis of function 
