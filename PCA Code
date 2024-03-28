@@ -1,0 +1,89 @@
+#Install all packages needed
+import numpy as np
+import scipy
+import sklearn
+import numba
+import matplotlib
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import plotly.graph_objects as go
+
+# Read the CSV file, drop NaN values
+data_frame = pd.read_csv('/Users/luzijungmayr/Desktop/Stuff/University Msc/Research Project 1b/Project/Data and Script/normalised_macs_data.csv')
+data_frame = data_frame.dropna()
+
+#Subset data frame to choose group wanted for PCA, M0 used as example
+groups_wanted = ['M0']
+subset_df = data_frame[data_frame['group_name'].isin(groups_wanted)].copy()
+#convert group_name column to categorical variable
+subset_df.loc[:, 'group_name']= pd.Categorical(subset_df['group_name'], categories=groups_wanted, ordered=True)
+
+#extract numeric data, first column is group_name
+data_X = subset_df.iloc[:, 1:].values
+
+#scale data
+scaler = StandardScaler()
+X = scaler.fit_transform(data_X)
+
+## PCA ##
+
+#perform PCA
+pca = PCA(n_components=102)
+pc = pca.fit_transform(X)
+
+#create new dataframe with PCs and add group info back to the dataframe
+pca_df = pd.DataFrame(data=pc, columns=[f'PC{i}' for i in range(1, 103)]) #['PC1', 'PC2'])
+pca_df['group'] = subset_df['group_name'].values
+
+#plot PCA graph
+fig = px.scatter(pca_df, x='PC1', y='PC2', color='group', title='PCA Plot for M0, M1, M2 Data')
+fig.show()
+
+## SCREE ##
+
+explained_variance_ratio = pca.explained_variance_ratio_
+
+#plot scree
+scree_plot = go.Scatter(x=np.arange(1, len(explained_variance_ratio) + 1), 
+                        y=np.cumsum(explained_variance_ratio),
+                        mode='lines+markers',
+                        name='Cumulative Explained Variance')
+
+layout_scree = go.Layout(title='Scree Plot for M0, M1, M2 Data',
+                         xaxis=dict(title='Principal Component'),
+                         yaxis=dict(title='Cumulative Explained Variance'))
+
+fig_scree = go.Figure(data=[scree_plot], layout=layout_scree)
+fig_scree.show()
+
+#loadings
+
+loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+loadings_df = pd.DataFrame(loadings.T, columns=[f'PC{i}' for i in range(1, 103)], index=subset_df.columns[1:])
+
+loadings_df['abs_PC1'] = np.abs(loadings_df['PC1'])
+loadings_df['abs_PC2'] = np.abs(loadings_df['PC2'])
+
+# Sort loadings by absolute values
+loadings_df = loadings_df.sort_values(by=['abs_PC1', 'abs_PC2'], ascending=False)
+
+# Plotting only top N loadings for better visualization
+top_n = 20  # only show top 20 highest loadings
+top_loadings_df = loadings_df.head(top_n)
+
+loadings_plot = go.Bar(x=top_loadings_df.index, y=top_loadings_df['PC1'], name='PC1 Loadings')
+loadings_plot2 = go.Bar(x=top_loadings_df.index, y=top_loadings_df['PC2'], name='PC2 Loadings')
+
+layout_loadings = go.Layout(title='Top {} Loadings Plot'.format(top_n),
+                            xaxis=dict(title='Features'),
+                            yaxis=dict(title='Loadings'))
+
+fig_loadings = go.Figure(data=[loadings_plot, loadings_plot2], layout=layout_loadings)
+fig_loadings.show()
+
+
+
