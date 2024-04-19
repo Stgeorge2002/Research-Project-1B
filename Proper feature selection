@@ -1,0 +1,111 @@
+# Import necessary libraries
+import numpy as np
+import pandas as pd
+from scipy.stats import ttest_ind, mannwhitneyu, ks_2samp
+from statsmodels.stats.multitest import multipletests
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
+from scipy.stats import rankdata
+import os
+
+# Define function for pairwise statistical tests
+def pairwise_tests(X, y, test_functions):
+    p_values = []
+    unique_classes = np.unique(y)
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)  # Ensure X is 2D
+    for i in range(len(unique_classes)):
+        for j in range(i + 1, len(unique_classes)):
+            group1 = X[y == unique_classes[i]]
+            group2 = X[y == unique_classes[j]]
+            for feature_index in range(X.shape[1]):  # Loop over each feature
+                for test in test_functions:
+                    # Apply test to the current feature column only
+                    if test in [ttest_ind, mannwhitneyu]:  # These tests can handle 1D arrays directly
+                        statistic, p_value = test(group1[:, feature_index], group2[:, feature_index])
+                    elif test is ks_2samp:  # Ensure data is 1D for ks_2samp
+                        statistic, p_value = test(group1[:, feature_index].ravel(), group2[:, feature_index].ravel())
+                    p_values.append(p_value)
+    return p_values
+
+def combine_pvalues(p_values, method='harmonic'):
+    eps = 1e-10  # Small constant to avoid division by zero and log(0)
+    if method == 'harmonic':
+        safe_p_values = np.where(p_values == 0, eps, p_values)
+        harmonic_mean = len(p_values) / np.sum(1.0 / safe_p_values)
+        return harmonic_mean
+    elif method == 'fisher':
+        from scipy.stats import combine_pvalues
+        safe_p_values = np.where(p_values == 0, eps, p_values)
+        return combine_pvalues(safe_p_values, method='fisher')[1]
+    else:
+        raise ValueError("Unsupported method. Choose 'harmonic' or 'fisher'.")
+
+
+# Define function for cross-validation
+def cv_score(X, y, estimator, n_splits):
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    scores = cross_val_score(estimator, X, y, cv=skf)
+    return np.mean(scores)
+
+# Define comprehensive function for feature selection
+def omniscient_feature_selection(X, y, k=15, alpha=0.05, method='fdr_bh', n_splits=10, n_estimators=500):
+    # Pairwise statistical tests
+    p_values_pairwise = pairwise_tests(X, y, [ttest_ind, mannwhitneyu, ks_2samp])
+    # Combine p-values
+    combined_p_values_harmonic = combine_pvalues(p_values_pairwise, method='harmonic')
+    combined_p_values_fisher = combine_pvalues(p_values_pairwise, method='fisher')
+    # Adjust p-values for multiple testing
+    adjusted_p_values_harmonic = multipletests(combined_p_values_harmonic, alpha=alpha, method=method)[1]
+    adjusted_p_values_fisher = multipletests(combined_p_values_fisher, alpha=alpha, method=method)[1]
+    # Machine learning models and feature selection techniques
+    feature_scores_lda = cv_score(X, y, LinearDiscriminantAnalysis(), n_splits)
+    feature_scores_qda = cv_score(X, y, QuadraticDiscriminantAnalysis(), n_splits)
+    feature_scores_rf = cv_score(X, y, RandomForestClassifier(n_estimators=n_estimators, random_state=42), n_splits)
+    feature_scores_gb = cv_score(X, y, GradientBoostingClassifier(n_estimators=n_estimators, random_state=42), n_splits)
+    feature_scores_ada = cv_score(X, y, AdaBoostClassifier(n_estimators=n_estimators, random_state=42), n_splits)
+    feature_scores_et = cv_score(X, y, ExtraTreesClassifier(n_estimators=n_estimators, random_state=42), n_splits)
+    feature_scores_xgb = cv_score(X, y, XGBClassifier(n_estimators=n_estimators, random_state=42), n_splits)
+    feature_scores_lgbm = cv_score(X, y, LGBMClassifier(n_estimators=n_estimators, random_state=42), n_splits)
+    feature_scores_cat = cv_score(X, y, CatBoostClassifier(iterations=n_estimators, random_seed=42), n_splits)
+    # Combine all scores into a single matrix
+    all_scores = np.vstack((
+        adjusted_p_values_harmonic,
+        adjusted_p_values_fisher,
+        feature_scores_lda,
+        feature_scores_qda,
+        feature_scores_rf,
+        feature_scores_gb,
+        feature_scores_ada,
+        feature_scores_et,
+        feature_scores_xgb,
+        feature_scores_lgbm,
+        feature_scores_cat
+    ))
+    # Rank the features
+    ranked_scores = np.apply_along_axis(rankdata, 1, all_scores)
+    # Apply Borda count
+    borda_scores = np.sum(ranked_scores, axis=0)
+    # Sort features by Borda scores
+    top_features = np.argsort(-borda_scores)
+    # Select top features
+    selected_features = top_features[:k]
+    return selected_features
+
+# Main execution block
+if __name__ == "__main__":
+    data_path = 'C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/DATA/Mnone.csv'
+    save_path = 'C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/DATA/Mnonegg.csv'
+    if os.path.exists(data_path):
+        data = pd.read_csv(data_path)
+        X = data.iloc[:, 9:].values  # Feature columns start from the 10th column
+        y = data['Treatment (1 d)'].values  # Target variable
+        selected_features = omniscient_feature_selection(X, y)
+        new_data = pd.concat([data.iloc[:, :9], data.iloc[:, selected_features + 9]], axis=1)
+        new_data.to_csv(save_path, index=False)
+    else:
+        print(f"Error: The file {data_path} does not exist.")

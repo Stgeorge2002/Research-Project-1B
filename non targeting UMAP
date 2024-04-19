@@ -1,0 +1,87 @@
+import subprocess
+import sys
+
+# Ensure all required packages are installed
+def ensure_packages_installed():
+    required_packages = ["umap-learn", "pandas", "numpy", "matplotlib", "scikit-learn"]
+    for package in required_packages:
+        try:
+            __import__(package)
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+ensure_packages_installed()
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import LassoSelector
+from matplotlib.path import Path
+from sklearn.preprocessing import StandardScaler
+import umap.umap_ as umap
+
+# Load your dataset
+def load_data(filepath):
+    return pd.read_csv(filepath)
+
+# UMAP analysis function for unsupervised learning
+def run_umap(data, n_neighbors=9, min_dist=0.001, n_components=2, metric='chebyshev'):
+    reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist, n_components=n_components, random_state=21, metric=metric)
+    embedding = reducer.fit_transform(data)
+    return embedding
+
+# Main script
+if __name__ == "__main__":
+    # Load the data
+    filepath = 'C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/Macs polarisation expt 1 DATA.csv'
+    data = load_data(filepath)
+    data_for_umap = data.iloc[:, 9:]  # Assuming features start from the 7th column
+    identifiers = data['Identifier']  # Assuming 'Identifier' column exists
+
+    # Preprocess the data
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(data_for_umap)
+
+    # Run UMAP without using treatment labels as the target
+    umap_results = run_umap(data_scaled)
+
+    # Prepare the DataFrame for plotting
+    umap_df = pd.DataFrame(umap_results, columns=['UMAP-1', 'UMAP-2'])
+    umap_df['Identifier'] = identifiers
+    umap_df['Treatment (1 d)'] = data['Treatment (1 d)']  # Keep for coloring but not as target
+
+    # Define the color mapping for each unique treatment
+    unique_treatments = data['Treatment (1 d)'].unique()
+    color_map = {treatment: plt.cm.tab10(i) for i, treatment in enumerate(unique_treatments)}
+
+    # Plot using matplotlib for 2D visualization with transparency and legend
+    fig, ax = plt.subplots(figsize=(10, 8))
+    colors = [color_map[treatment] for treatment in umap_df['Treatment (1 d)']]
+    scatter = ax.scatter(umap_df['UMAP-1'], umap_df['UMAP-2'], c=colors, s=20, alpha=0.2)  # Added alpha for transparency
+    ax.set_title('2D UMAP Projection')
+    ax.set_xlabel('UMAP-1')
+    ax.set_ylabel('UMAP-2')
+
+    # Create a legend
+    from matplotlib.patches import Patch
+    legend_handles = [Patch(color=color_map[treatment], label=treatment) for treatment in unique_treatments]
+    ax.legend(handles=legend_handles, title="Treatments")
+
+    # Rest of the code for lasso selection and plotting remains unchanged
+    # Function to handle the selection of data points
+    def onselect(verts):
+        path = Path(verts)
+        ind = np.nonzero(path.contains_points(scatter.get_offsets()))[0]  # Get index of points within the path
+        selected_identifiers = umap_df.iloc[ind]['Identifier'].tolist()  # Retrieve identifiers using these indices
+        
+        # Save selected identifiers to a text file
+        with open('C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/OUTPUT2D/selected_identifiers.txt', 'w') as f:
+            for identifier in selected_identifiers:
+                f.write("%s\n" % identifier)
+        
+        print(f"Selected {len(selected_identifiers)} data points. Identifiers saved to 'selected_identifiers.txt'.")
+
+    # Create the lasso selector
+    lasso = LassoSelector(ax, onselect, useblit=True)
+
+    plt.show()

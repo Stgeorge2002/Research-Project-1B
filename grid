@@ -1,0 +1,53 @@
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+import umap.umap_ as umap
+
+def load_data(filepath):
+    return pd.read_csv(filepath)
+
+def run_umap(data, target, n_neighbors=9, min_dist=0.001, n_components=2, metric='chebyshev'):
+    reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist, n_components=n_components, random_state=42,
+                        metric=metric, target_weight=0.3)  # Ensure target_weight is non-zero for supervision
+    embedding = reducer.fit_transform(data, y=target)
+    return embedding
+
+# Convert categorical labels to numerical labels
+def encode_labels(labels):
+    label_codes, uniques = pd.factorize(labels)
+    return label_codes, dict(enumerate(uniques))
+
+if __name__ == "__main__":
+    filepath = 'C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/DATA/lime and sharp/more_cleaned_Mnone.csv'
+    data = load_data(filepath)
+    data_for_umap = data.iloc[:, 10:]  # Adjust if features start elsewhere
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(data_for_umap)
+    treatments = data['Treatment (1 d)']
+    
+    # Encode treatment labels
+    treatment_codes, treatment_map = encode_labels(treatments)
+
+    # Generate UMAP embedding with supervision
+    umap_embedding = run_umap(data_scaled, treatment_codes)
+
+    # Number of features to plot
+    num_features = data_for_umap.shape[1]
+    feature_names = data_for_umap.columns  # Collect feature names for plot titles
+    num_plots_side = int(np.ceil(np.sqrt(num_features)))  # Determine grid size
+
+    fig, axes = plt.subplots(nrows=num_plots_side, ncols=num_plots_side, figsize=(15, 15))
+
+    for i in range(num_plots_side * num_plots_side):
+        ax = axes.flatten()[i]
+        if i < num_features:
+            sc = ax.scatter(umap_embedding[:, 0], umap_embedding[:, 1], c=data_scaled[:, i], cmap='viridis', s=5, alpha=0.6)
+            ax.set_title(feature_names[i], fontsize=8)  # Use actual feature names for titles
+            fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
+        else:
+            ax.axis('off')  # Turn off axis for unused subplots
+
+    plt.tight_layout()
+    plt.show()
