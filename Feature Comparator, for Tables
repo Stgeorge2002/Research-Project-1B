@@ -1,0 +1,79 @@
+import pandas as pd
+
+def load_identifiers(filepath):
+    """Load identifiers from a text file into a list."""
+    try:
+        with open(filepath, 'r') as file:
+            identifiers = [int(line.strip()) for line in file]
+        return identifiers
+    except Exception as e:
+        print(f"Error loading identifiers: {e}")
+        return []
+
+def load_data(filepath):
+    """Load the dataset from a specified filepath without filtering columns."""
+    try:
+        return pd.read_csv(filepath)
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        return pd.DataFrame()  # Return an empty DataFrame on failure
+
+def treatment_percentages(data, identifiers, save_path):
+    """Calculate percentages of different classes in the 'Treatment (1 d)' column for both the full dataset and selected identifiers."""
+    try:
+        global_treatments = data['Treatment (1 d)'].value_counts(normalize=True) * 100
+        selected_treatments = data[data['Identifier'].isin(identifiers)]['Treatment (1 d)'].value_counts(normalize=True) * 100
+        
+        df_global_treatments = pd.DataFrame(global_treatments).reset_index()
+        df_global_treatments.columns = ['Treatment', 'Percentage Global']
+        df_selected_treatments = pd.DataFrame(selected_treatments).reset_index()
+        df_selected_treatments.columns = ['Treatment', 'Percentage Selected']
+        
+        treatment_summary = pd.merge(df_global_treatments, df_selected_treatments, on='Treatment', how='outer')
+        treatment_summary.to_csv(f'{save_path}/treatment_percentages.csv', index=False)
+    except Exception as e:
+        print(f"Error calculating treatment percentages: {e}")
+
+def analyze_identifiers(data, identifiers, save_path):
+    """Analyze the average of each feature of the selected identifiers against the global average of each class."""
+    try:
+        features = data.columns[9:]  # All features from the 10th column onwards
+        filtered_data = data[data['Identifier'].isin(identifiers)]
+        
+        identifier_averages = filtered_data[features].mean()
+        identifier_variances = filtered_data[features].var()
+        global_averages = data[features].mean()  # Calculate global average for all features
+        global_variances = data[features].var()  # Calculate global variance for all features
+        
+        results = []
+        for feature in features:
+            mean_diff = identifier_averages[feature] - global_averages[feature]
+            ratio = mean_diff / global_averages[feature] if global_averages[feature] != 0 else 0
+            percentage_difference = ratio * 100
+            results.append({
+                'Feature': feature,
+                'Global Average': global_averages[feature],
+                'Selected Average': identifier_averages[feature],
+                'Percentage Difference': percentage_difference,
+                'Global Variance': global_variances[feature],
+                'Selected Variance': identifier_variances[feature]
+            })
+        
+        df_results = pd.DataFrame(results)
+        df_results.to_csv(f'{save_path}/analysis_results.csv', index=False)
+    except Exception as e:
+        print(f"Error in analysis: {e}")
+
+if __name__ == "__main__":
+    save_path = 'C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/DATA/'
+    identifier_file = 'C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/OUTPUT2D/selected_identifiers.txt'
+    identifiers = load_identifiers(identifier_file)
+    dataset_filepath = 'C:/Users/theoa/OneDrive/Desktop/Bath/Research Project 1B/DATA/lime and sharp/more_cleaned_Mnone.csv'
+    
+    data = load_data(dataset_filepath)
+    if not data.empty:
+        treatment_percentages(data, identifiers, save_path)
+        analyze_identifiers(data, identifiers, save_path)
+        print("Analysis results and treatment percentages have been saved to:", save_path)
+    else:
+        print("Failed to load data, terminating script.")
